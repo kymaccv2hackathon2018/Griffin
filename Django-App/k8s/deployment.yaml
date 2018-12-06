@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: django
+  labels:
+    name: django
+spec:
+  selector:
+    matchLabels:
+      app: django
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: django
+
+    spec:
+      containers:
+      - name: django
+        image: drunkdutch/kyma_order:0.1.0
+        imagePullPolicy: Always
+      restartPolicy: Always
