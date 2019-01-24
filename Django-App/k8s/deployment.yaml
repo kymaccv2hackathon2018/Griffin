@@ -17,6 +17,6 @@ spec:
     spec:
       containers:
       - name: django
-        image: drunkdutch/kyma_order:0.1.0
+        image: drunkdutch/kyma_order:0.2.3
         imagePullPolicy: Always
       restartPolicy: Always

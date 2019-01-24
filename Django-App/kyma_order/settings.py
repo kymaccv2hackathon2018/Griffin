@@ -12,6 +12,10 @@ https://docs.djangoproject.com/en/2.1/ref/settings/
 
 import os
 
+ROOT_URL = "https://electronics.cqz1m-softwarea1-s1-public.model-t.cc.commerce.ondemand.com"
+
+OCC_PATH = "rest/v2/electronics/users"
+
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

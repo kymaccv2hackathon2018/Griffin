@@ -1,16 +1,15 @@
-from django.shortcuts import render
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.http import HttpResponseRedirect, HttpResponse, Http404
-import requests
+from django.http import HttpResponse
 import json
 import logging
 from .serializers import OrderSerializer, StockLevelSerializer
 from .models import Product, StockLevel, Order
 from time import time
 from django.forms.models import model_to_dict
-from django.utils.timezone import utc
+from .utils import start_order, get_stock
+from django.conf import settings
 
 
 # Get an instance of a logger
@@ -18,11 +17,11 @@ logger = logging.getLogger(__name__)
 
 # Create your views here.
 # TODO Make root url an environment variable
-root_url = (
-    "https://electronics.cqz1m-softwarea1-d6-public.model-t.cc.commerce.ondemand.com"
+ROOT_URL = (
+    settings.ROOT_URL
 )
 
-occ_path = "rest/v2/electronics/users"
+OCC_PATH = settings.OCC_PATH
 
 
 @api_view(["GET", "POST"])
@@ -64,7 +63,7 @@ class StockDetail(APIView):
         product = Product.objects.get(productId=p_id)
         orders = Order.objects.filter(placed=False, productCode=product.id)
         for order in orders:
-            start_order(order)
+            start_order(order, ROOT_URL, OCC_PATH)
         return HttpResponse(
             json.dumps(model_to_dict(stock)), content_type="application/json"
         )
@@ -96,158 +95,5 @@ def kyma_order(request):
         return HttpResponse("Product out of stock, order not placed")
     # start_order(serializer)
     order = Order.objects.get(created_at__exact=t_stamp)
-    order_placed = start_order(order)
+    order_placed = start_order(order, ROOT_URL, OCC_PATH)
     return HttpResponse(order_placed, content_type="application/json")
-
-
-def start_order(serialized_order):
-    token = get_bearer_token()
-    cart = get_cart(token)
-    product = serialized_order.productCode
-
-    quantity = serialized_order.order_amount
-
-    add_to_cart(token, product.productId, quantity, cart)
-    address = add_address(token)
-    assign_address_to_cart(token, cart, address)
-    set_delivery_mode(token, cart)
-    add_payment_to_cart(token, cart)
-    order = place_order(token, cart)
-    stock_level = product.stocklevel
-    stock_level.amount -= quantity
-    stock_level.save()
-    serialized_order.placed = True
-    serialized_order.save()
-    return order
-
-
-def get_bearer_token():
-    url = f"{root_url}/authorizationserver/oauth/token"
-    data = {
-        "client_id": "eic",
-        "client_secret": "secret",
-        "grant_type": "password",
-        "username": "devin.mens@sap.com",
-        "password": "welcome",
-    }
-    header = {"Content-Type": "application/x-www-form-urlencoded"}
-    print(url)
-    req = requests.post(url=url, data=data, headers=header)
-    j = json.loads(req.text)
-    print(j)
-    return j["access_token"]
-
-
-def get_cart(token):
-    headers = {"authorization": f"Bearer {token}"}
-    url = f"{root_url}/{occ_path}/devin.mens@sap.com/carts"
-    req = requests.post(url=url, headers=headers)
-    res = json.loads(req.text)
-    print(res["code"])
-    return res["code"]
-
-
-def add_to_cart(token, code, quantity, cart):
-    url = f"{root_url}/{occ_path}/devin.mens@sap.com/carts/{cart}/entries"
-    headers = {"authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    data = {"product": {"code": code}, "quantity": quantity}
-    req = requests.post(url=url, headers=headers, data=json.dumps(data))
-    print(req.text)
-
-
-def add_address(token):
-    url = f"{root_url}/{occ_path}/devin.mens@sap.com/addresses"
-    headers = {"authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    address = {
-        "country": {"isocode": "US"},
-        "defaultAddress": True,
-        "titleCode": "mr",
-        "firstName": "Devin",
-        "id": "8796165636119",
-        "lastName": "Mens",
-        "line1": "1 fifth avenue",
-        "line2": "",
-        "phone": "",
-        "postalCode": "10003",
-        "region": {"isocode": "US-NY"},
-        "town": "New York City",
-    }
-    req = requests.post(url=url, headers=headers, data=json.dumps(address))
-    res = json.loads(req.text)
-    print(res)
-    return res["id"]
-
-
-def assign_address_to_cart(token, cart, addressId):
-    url = f"{root_url}/{occ_path}/devin.mens@sap.com/carts/{cart}/addresses/delivery"
-    headers = {
-        "authorization": f"Bearer {token}",
-        "Content-Type": "application/x-www-form-urlencoded",
-    }
-    data = {"addressId": addressId}
-    req = requests.put(url=url, headers=headers, data=data)
-    print(req.status_code)
-
-
-def set_delivery_mode(token, cart):
-    url = f"{root_url}/{occ_path}/devin.mens@sap.com/carts/{cart}/deliverymode"
-    headers = {
-        "authorization": f"Bearer {token}",
-        "Content-Type": "application/x-www-form-urlencoded",
-    }
-    data = {"deliveryModeId": "standard-net"}
-    req = requests.put(url=url, headers=headers, data=data)
-    print(req.status_code)
-
-
-def add_payment_to_cart(token, cart):
-    url = f"{root_url}/{occ_path}/devin.mens@sap.com/carts/{cart}/paymentdetails"
-    headers = {"authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    payment = {
-        "accountHolderName": "Devin Mens",
-        "cardNumber": "4586316481054884",
-        "cardType": {"code": "visa"},
-        "expiryMonth": "11",
-        "expiryYear": "2022",
-        "defaultPayment": True,
-        "billingAddress": {
-            "country": {"isocode": "US"},
-            "defaultAddress": True,
-            "titleCode": "mr",
-            "firstName": "Devin",
-            "id": "8796165636119",
-            "lastName": "Mens",
-            "line1": "1 fifth avenue",
-            "line2": "",
-            "phone": "",
-            "postalCode": "10003",
-            "region": {"isocode": "US-NY"},
-            "town": "New York City",
-        },
-    }
-    req = requests.post(url=url, headers=headers, data=json.dumps(payment))
-    print(req.status_code)
-
-
-def place_order(token, cart):
-    url = f"{root_url}/{occ_path}/devin.mens@sap.com/orders"
-    headers = {
-        "authorization": f"Bearer {token}",
-        "Content-Type": "application/x-www-form-urlencoded",
-    }
-    data = {"cartId": cart, "securityCode": "658"}
-
-    req = requests.post(url=url, headers=headers, data=data)
-    print(req.status_code)
-    res = req.text
-    return res
-
-
-def get_stock(p_id):
-    try:
-        print(p_id)
-        product = Product.objects.get(productId=p_id)
-        print(product)
-        return StockLevel.objects.get(productId=product.id)
-    except Exception:
-        raise Http404
